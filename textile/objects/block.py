@@ -1,7 +1,7 @@
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ordereddict import OrderedDict
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+from collections import OrderedDict
 try:
     import regex as re
 except ImportError:
@@ -20,7 +20,7 @@ class Block(object):
         self.cite = cite
         self.content = content
 
-        self.attributes = parse_attributes(atts)
+        self.attributes = parse_attributes(atts, restricted=self.textile.restricted)
         self.outer_tag = ''
         self.inner_tag = ''
         self.outer_atts = OrderedDict()
@@ -46,6 +46,7 @@ class Block(object):
             # It will be empty if the regex matched and ate it.
             if '' == notedef:
                 self.content = notedef
+                self.eat = True
 
         fns = re.search(r'fn(?P<fnid>{0}+)'.format(regex_snippets['digit']),
                 self.tag, flags=re.U)
@@ -68,7 +69,7 @@ class Block(object):
             if 'id' not in self.attributes:
                 self.attributes.update({'id': 'fn{0}'.format(fnid)})
             else:
-                supp_id = parse_attributes('(#fn{0})'.format(fnid))
+                supp_id = parse_attributes('(#fn{0})'.format(fnid), restricted=self.textile.restricted)
 
 
             if '^' not in self.atts:
@@ -100,8 +101,6 @@ class Block(object):
             if self.tag == 'bc':
                 i_tag = 'code'
             content = encode_html(self.content)
-            if not self.ext:
-                content = '{0}\n'.format(content)
             self.content = self.textile.shelve(content)
             self.outer_tag = 'pre'
             self.outer_atts = self.attributes

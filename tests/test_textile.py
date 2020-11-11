@@ -53,6 +53,46 @@ def test_restricted():
 
     assert result == expect
 
+    test = "p{color:blue}. is this blue?"
+    result = textile.textile_restricted(test)
+    expect = '\t<p>is this blue?</p>'
+
+    assert result == expect
+
+    test = """\
+table{border:1px solid black}.
+|={color:gray}. Your caption goes here
+|~.
+|{position:absolute}. A footer | foo |
+|-.
+|_{font-size:xxlarge}. header|_=. centered header|
+|~. bottom aligned|{background:red;width:200px}. asfd|"""
+    result = textile.textile_restricted(test, lite=False)
+    # styles from alignment hints like =. and ~. are ok
+    expect = '''\
+\t<table>
+\t<caption>Your caption goes here</caption>
+\t
+\t<tfoot>
+\t\t<tr>
+\t\t\t<td>A footer </td>
+\t\t\t<td> foo </td>
+\t\t</tr>
+\t</tfoot>
+\t<tbody>
+\t\t<tr>
+\t\t\t<th>header</th>
+\t\t\t<th style="text-align:center;">centered header</th>
+\t\t</tr>
+\t\t<tr>
+\t\t\t<td style="vertical-align:bottom;">bottom aligned</td>
+\t\t\t<td>asfd</td>
+\t\t</tr>
+\t</tbody>
+\t</table>'''
+
+    assert result == expect
+
 def test_unicode_footnote():
     html = textile.textile('текст[1]')
     assert re.compile(r'^\t<p>текст<sup class="footnote" id="fnrev([a-f0-9]{32})-1"><a href="#fn\1-1">1</a></sup></p>$', re.U).search(html) is not None
@@ -67,22 +107,18 @@ def test_autolinking():
 def test_sanitize():
     test = "a paragraph of benign text"
     result = "\t<p>a paragraph of benign text</p>"
-    try:
-        expect = textile.Textile().parse(test, sanitize=True)
-        assert result == expect
+    expect = textile.Textile().parse(test, sanitize=True)
+    assert result == expect
 
-        test = """<p style="width: expression(alert('evil'));">a paragraph of evil text</p>"""
-        result = '<p style="">a paragraph of evil text</p>'
-        expect = textile.Textile().parse(test, sanitize=True)
-        assert result == expect
+    test = """<p style="width: expression(alert('evil'));">a paragraph of evil text</p>"""
+    result = '<p style="">a paragraph of evil text</p>'
+    expect = textile.Textile().parse(test, sanitize=True)
+    assert result == expect
 
-        test = """<p>a paragraph of benign text<br />and more text</p>"""
-        result = '<p>a paragraph of benign text<br />\nand more text</p>'
-        expect = textile.Textile(html_type='html5').parse(test, sanitize=True)
-        assert result == expect
-    except Exception as e:
-        message = '{0}'.format(e)
-        assert "html5lib not available" in message
+    test = """<p>a paragraph of benign text<br />and more text</p>"""
+    result = '<p>a paragraph of benign text<br />\nand more text</p>'
+    expect = textile.Textile(html_type='html5').parse(test, sanitize=True)
+    assert result == expect
 
 def test_imagesize():
     PIL = pytest.importorskip('PIL')

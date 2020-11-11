@@ -1,19 +1,14 @@
 from __future__ import unicode_literals
-import six
 
 try:
     import regex as re
 except ImportError:
     import re
 
-from six.moves import urllib, html_parser
-urlparse = urllib.parse.urlparse
-HTMLParser = html_parser.HTMLParser
+from urllib.parse import urlparse
+import html
 
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ordereddict import OrderedDict
+from collections import OrderedDict
 
 from xml.etree import ElementTree
 
@@ -22,9 +17,8 @@ from textile.regex_strings import valign_re_s, halign_re_s
 
 def decode_high(text):
     """Decode encoded HTML entities."""
-    h = HTMLParser()
     text = '&#{0};'.format(text)
-    return h.unescape(text)
+    return html.unescape(text)
 
 def encode_high(text):
     """Encode the text so that it is an appropriate HTML entity."""
@@ -49,32 +43,25 @@ def generate_tag(tag, content, attributes=None):
     """Generate a complete html tag using the ElementTree module.  tag and
     content are strings, the attributes argument is a dictionary.  As
     a convenience, if the content is ' /', a self-closing tag is generated."""
-    content = six.text_type(content)
     enc = 'unicode'
-    if six.PY2:
-        enc = 'UTF-8'
     if not tag:
         return content
     element = ElementTree.Element(tag, attrib=attributes)
+    # Sort attributes for Python 3.8+, as suggested in
+    # https://docs.python.org/3/library/xml.etree.elementtree.html
+    if len(element.attrib) > 1:
+        # adjust attribute order, e.g. by sorting
+        attribs = sorted(element.attrib.items())
+        element.attrib.clear()
+        element.attrib.update(attribs)
     # FIXME: Kind of an ugly hack.  There *must* be a cleaner way.  I tried
     # adding text by assigning it to element_tag.text.  That results in
     # non-ascii text being html-entity encoded.  Not bad, but not entirely
     # matching php-textile either.
-    try:
-        element_tag = ElementTree.tostringlist(element, encoding=enc,
-                method='html')
-        element_tag.insert(len(element_tag) - 1, content)
-        element_text = ''.join(element_tag)
-    except AttributeError:
-        # Python 2.6 doesn't have the tostringlist method, so we have to treat
-        # it differently.
-        element_tag = ElementTree.tostring(element, encoding=enc)
-        element_text = re.sub(r"<\?xml version='1.0' encoding='UTF-8'\?>\n",
-                '', element_tag)
-        if content != six.text_type(' /'):
-            element_text = element_text.rstrip(' />')
-            element_text = six.text_type('{0}>{1}</{2}>').format(six.text_type(
-                element_text), content, tag)
+    element_tag = ElementTree.tostringlist(element, encoding=enc,
+            method='html')
+    element_tag.insert(len(element_tag) - 1, content)
+    element_text = ''.join(element_tag)
     return element_text
 
 def has_raw_text(text):
@@ -110,13 +97,12 @@ def list_type(list_string):
 
 def normalize_newlines(string):
     out = string.strip()
-    out = re.sub(r'\r\n', '\n', out)
-    out = re.sub(r'\n{3,}', '\n\n', out)
-    out = re.sub(r'\n\s*\n', '\n\n', out)
+    out = re.sub(r'\r\n?', '\n', out)
+    out = re.compile(r'^[ \t]*\n', flags=re.M).sub('\n', out)
     out = re.sub(r'"$', '" ', out)
     return out
 
-def parse_attributes(block_attributes, element=None, include_id=True):
+def parse_attributes(block_attributes, element=None, include_id=True, restricted=False):
     vAlign = {'^': 'top', '-': 'middle', '~': 'bottom'}
     hAlign = {'<': 'left', '=': 'center', '>': 'right', '<>': 'justify'}
     style = []
@@ -147,10 +133,11 @@ def parse_attributes(block_attributes, element=None, include_id=True):
         if m:
             style.append("vertical-align:{0}".format(vAlign[m.group(1)]))
 
-    m = re.search(r'\{([^}]*)\}', matched)
-    if m:
-        style.extend(m.group(1).rstrip(';').split(';'))
-        matched = matched.replace(m.group(0), '')
+    if not restricted:
+        m = re.search(r'\{([^}]*)\}', matched)
+        if m:
+            style.extend(m.group(1).rstrip(';').split(';'))
+            matched = matched.replace(m.group(0), '')
 
     m = re.search(r'\[([^\]]+)\]', matched, re.U)
     if m:
@@ -208,9 +195,9 @@ def parse_attributes(block_attributes, element=None, include_id=True):
         result['width'] = width
     return result
 
-def pba(block_attributes, element=None, include_id=True):
+def pba(block_attributes, element=None, include_id=True, restricted=False):
     """Parse block attributes."""
-    attrs = parse_attributes(block_attributes, element, include_id)
+    attrs = parse_attributes(block_attributes, element, include_id, restricted)
     if not attrs:
         return ''
     result = ' '.join(['{0}="{1}"'.format(k, v) for k, v in attrs.items()])

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-import six
 from xml.etree import ElementTree
 
 from textile.regex_strings import (align_re_s, cls_re_s, regex_snippets,
@@ -17,7 +16,7 @@ except ImportError:
 class Table(object):
     def __init__(self, textile, tatts, rows, summary):
         self.textile = textile
-        self.attributes = parse_attributes(tatts, 'table')
+        self.attributes = parse_attributes(tatts, 'table', restricted=self.textile.restricted)
         if summary:
             self.attributes.update(summary=summary.strip())
         self.input = rows
@@ -38,15 +37,17 @@ class Table(object):
             # as a normal center-aligned cell.
             if i == 0 and row[:2] == '|=':
                 captionpattern = (r"^\|\=(?P<capts>{s}{a}{c})\. "
-                        r"(?P<cap>[^\n]*)(?P<row>.*)".format(**{'s':
-                            table_span_re_s, 'a': align_re_s, 'c': cls_re_s}))
+                                  r"(?P<cap>[^\n]*)(?P<row>.*)".format(**{
+                                      's': table_span_re_s, 'a': align_re_s,
+                                      'c': cls_re_s}))
                 caption_re = re.compile(captionpattern, re.S)
                 cmtch = caption_re.match(row)
-                caption = Caption(**cmtch.groupdict())
-                self.caption = '\n{0}'.format(caption.caption)
-                row = cmtch.group('row').lstrip()
-                if row == '':
-                    continue
+                if cmtch:
+                    caption = Caption(restricted=self.textile.restricted, **cmtch.groupdict())
+                    self.caption = '\n{0}'.format(caption.caption)
+                    row = cmtch.group('row').lstrip()
+                    if row == '':
+                        continue
 
             # Colgroup -- A colgroup row will not necessarily end with a |.
             # Hence it may include the next row of actual table data.
@@ -58,7 +59,7 @@ class Table(object):
                 colgroup_atts, cols = colgroup_data, None
                 if '|' in colgroup_data:
                     colgroup_atts, cols = colgroup_data.split('|', 1)
-                colgrp = Colgroup(cols, colgroup_atts)
+                colgrp = Colgroup(cols, colgroup_atts, restricted=self.textile.restricted)
                 self.colgroup = colgrp.process()
                 if row == '':
                     continue
@@ -77,13 +78,13 @@ class Table(object):
                 if rgrp:
                     groups.append('\n\t{0}'.format(rgrp.process()))
                 rgrp = grptypes[grpmatch.group('part')](grpmatch.group(
-                    'rgrpatts'))
+                    'rgrpatts'), restricted=self.textile.restricted)
             row = grpmatch.group('row')
 
             rmtch = re.search(r'^(?P<ratts>{0}{1}\. )(?P<row>.*)'.format(
                 align_re_s, cls_re_s), row.lstrip())
             if rmtch:
-                row_atts = parse_attributes(rmtch.group('ratts'), 'tr')
+                row_atts = parse_attributes(rmtch.group('ratts'), 'tr', restricted=self.textile.restricted)
                 row = rmtch.group('row')
             else:
                 row_atts = {}
@@ -100,7 +101,7 @@ class Table(object):
                             cls_re_s), cell, flags=re.S)
                 if cmtch:
                     catts = cmtch.group('catts')
-                    cell_atts = parse_attributes(catts, 'td')
+                    cell_atts = parse_attributes(catts, 'td', restricted=self.textile.restricted)
                     cell = cmtch.group('cell')
                 else:
                     cell_atts = {}
@@ -137,8 +138,8 @@ class Table(object):
 
 
 class Caption(object):
-    def __init__(self, capts, cap, row):
-        self.attributes = parse_attributes(capts)
+    def __init__(self, capts, cap, row, restricted):
+        self.attributes = parse_attributes(capts, restricted=restricted)
         self.caption = self.process(cap)
 
     def process(self, cap):
@@ -147,17 +148,16 @@ class Caption(object):
 
 
 class Colgroup(object):
-    def __init__(self, cols, atts):
+    def __init__(self, cols, atts, restricted):
         self.row = ''
         self.attributes = atts
         self.cols = cols
+        self.restricted = restricted
 
     def process(self):
         enc = 'unicode'
-        if six.PY2: # pragma: no branch
-            enc = 'UTF-8'
 
-        group_atts = parse_attributes(self.attributes, 'col')
+        group_atts = parse_attributes(self.attributes, 'col', restricted=self.restricted)
         colgroup = ElementTree.Element('colgroup', attrib=group_atts)
         colgroup.text = '\n\t'
         if self.cols is not None:
@@ -166,7 +166,7 @@ class Colgroup(object):
             # colgroup is the first item in match_cols, the remaining items are
             # cols.
             for idx, col in enumerate(match_cols):
-                col_atts = parse_attributes(col.strip(), 'col')
+                col_atts = parse_attributes(col.strip(), 'col', restricted=self.restricted)
                 ElementTree.SubElement(colgroup, 'col', col_atts)
         colgrp = ElementTree.tostring(colgroup, encoding=enc)
         # cleanup the extra xml declaration if it exists, (python versions
@@ -203,9 +203,9 @@ class Cell(object):
 
 
 class _TableSection(object):
-    def __init__(self, tag, attributes):
+    def __init__(self, tag, attributes, restricted):
         self.tag = tag
-        self.attributes = parse_attributes(attributes)
+        self.attributes = parse_attributes(attributes, restricted=restricted)
         self.rows = []
 
     def process(self):
@@ -213,15 +213,15 @@ class _TableSection(object):
 
 
 class Thead(_TableSection):
-    def __init__(self, attributes):
-        super(Thead, self).__init__('thead', attributes)
+    def __init__(self, attributes, restricted):
+        super(Thead, self).__init__('thead', attributes, restricted)
 
 
 class Tbody(_TableSection):
-    def __init__(self, attributes):
-        super(Tbody, self).__init__('tbody', attributes)
+    def __init__(self, attributes, restricted):
+        super(Tbody, self).__init__('tbody', attributes, restricted)
 
 
 class Tfoot(_TableSection):
-    def __init__(self, attributes):
-        super(Tfoot, self).__init__('tfoot', attributes)
+    def __init__(self, attributes, restricted):
+        super(Tfoot, self).__init__('tfoot', attributes, restricted)
